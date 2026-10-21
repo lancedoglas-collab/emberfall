@@ -2807,7 +2807,6 @@ window.addEventListener('pointerdown',(e)=>{
   else if(e.pointerType==='mouse') setTouchMode(false);
 },true);
 window.addEventListener('contextmenu',(e)=>{ if(touchMode) e.preventDefault(); });
-if(window.matchMedia && matchMedia('(pointer: coarse)').matches) setTouchMode(true);
 const FS_SUPPORTED=!!(document.fullscreenEnabled||document.webkitFullscreenEnabled);
 function isFullscreen(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
 function lockLandscape(){
@@ -4692,6 +4691,8 @@ document.getElementById('chk-reduce-fx').addEventListener('change',(e)=>{ REDUCE
 // initial screen
 buildArena();
 showScreen('screen-menu');
+// runs last on purpose: setTouchMode reads game-state variables declared further down the file
+if(window.matchMedia && matchMedia('(pointer: coarse)').matches) setTouchMode(true);
 // browsers block sound until the player clicks or presses a key, so the menu music
 // starts on the first gesture (or right away if the browser already allows autoplay)
 function startAudioFromGesture(){
