@@ -354,6 +354,10 @@ body.touch-mode .combo-counter{top:116px;}
 .cut-title-rule{width:220px;height:1px;background:linear-gradient(90deg,transparent,rgba(106,80,48,0.85),transparent);}
 .cut-title-text{font-family:'Cinzel',serif;font-size:16px;letter-spacing:9px;color:var(--parchment);text-transform:uppercase;text-shadow:0 0 28px rgba(255,150,50,0.55),0 2px 10px rgba(0,0,0,0.95);}
 .cutscene-canvas{image-rendering:pixelated;position:absolute;inset:0;width:100%;height:100%;}
+body.cut-stacked .cutscene-canvas{height:calc(100% - var(--dlg-space,160px));object-fit:contain;}
+body.cut-stacked .cut-overlay{bottom:var(--dlg-space,160px);}
+body.cut-stacked .dialogue-box{bottom:8px;}
+body.cut-stacked .dialogue-text{font-size:16px;line-height:1.6;min-height:52px;}
 .center-msg{font-family:'Press Start 2P',monospace;color:var(--parchment);font-size:11px;letter-spacing:1px;opacity:0.7;position:absolute;bottom:30px;left:50%;transform:translateX(-50%);animation:blink 1.4s infinite;}
 @keyframes blink{0%,100%{opacity:0.25}50%{opacity:0.85}}
 .stats-row{display:flex;justify-content:space-between;color:var(--parchment);font-size:14px;padding:4px 0;border-bottom:1px dashed var(--stone-dark);}
@@ -918,9 +922,21 @@ let actx=null;
 let masterGain=null, masterCompressor=null, reverbBus=null;
 let VOL_MUSIC=0.85, VOL_SFX=1.0;
 const LOUDNESS_BOOST=2.2;
+// phone/tablet speakers can't reproduce much below ~250Hz, and most of this game's music and
+// impact sounds live down there, so on touch devices low tones are lifted by whole octaves
+// and the mix goes through a louder output chain
+const MOBILE_AUDIO=!!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+function phoneLift(f){
+  if(!MOBILE_AUDIO || !f) return 1;
+  let m=1; while(f*m<240 && m<8) m*=2;
+  return m;
+}
+let audioTap=null;
 function initAudio(){
   if(!actx){
     try{
+      // iOS 17+: treat the game as media playback so it uses full media volume and ignores the mute switch
+      if(MOBILE_AUDIO && navigator.audioSession){ try{ navigator.audioSession.type='playback'; }catch(e){} }
       actx=new (window.AudioContext||window.webkitAudioContext)();
       masterCompressor=actx.createDynamicsCompressor();
       masterCompressor.threshold.value=-18;
@@ -930,8 +946,20 @@ function initAudio(){
       masterCompressor.release.value=0.2;
       masterGain=actx.createGain();
       masterGain.gain.value=1.6;
-      masterGain.connect(masterCompressor);
-      masterCompressor.connect(actx.destination);
+      if(MOBILE_AUDIO){
+        const lowCut=actx.createBiquadFilter(); lowCut.type='highpass'; lowCut.frequency.value=170; lowCut.Q.value=0.7;
+        masterCompressor.threshold.value=-26; masterCompressor.ratio.value=4;
+        const makeup=actx.createGain(); makeup.gain.value=2.5;
+        const limiter=actx.createDynamicsCompressor();
+        limiter.threshold.value=-4; limiter.knee.value=0; limiter.ratio.value=20; limiter.attack.value=0.001; limiter.release.value=0.08;
+        masterGain.connect(lowCut); lowCut.connect(masterCompressor);
+        masterCompressor.connect(makeup); makeup.connect(limiter); limiter.connect(actx.destination);
+        audioTap=limiter;
+      } else {
+        masterGain.connect(masterCompressor);
+        masterCompressor.connect(actx.destination);
+        audioTap=masterCompressor;
+      }
       reverbBus=actx.createDelay(1.2);
       reverbBus.delayTime.value=0.27;
       const revFeedback=actx.createGain(); revFeedback.gain.value=0.34;
@@ -945,6 +973,7 @@ function initAudio(){
 function audioOut(){ return masterGain||(actx?actx.destination:null); }
 function sfxTone(freqStart,freqEnd,dur,type='sine',vol=0.2){
   if(!actx) return; vol=vol*VOL_SFX*LOUDNESS_BOOST;
+  const lift=phoneLift(Math.min(freqStart,freqEnd)); freqStart*=lift; freqEnd*=lift;
   const t0=actx.currentTime;
   const osc=actx.createOscillator(); const gain=actx.createGain();
   osc.type=type; osc.frequency.setValueAtTime(Math.max(freqStart,1),t0); osc.frequency.exponentialRampToValueAtTime(Math.max(freqEnd,1),t0+dur);
@@ -954,6 +983,7 @@ function sfxTone(freqStart,freqEnd,dur,type='sine',vol=0.2){
 }
 function sfxNoise(dur,vol=0.2,filterFreq=2000,type='highpass'){
   if(!actx) return; vol=vol*VOL_SFX*LOUDNESS_BOOST;
+  if(MOBILE_AUDIO && type==='lowpass') filterFreq*=phoneLift(filterFreq)*1.5;
   const bufferSize=Math.floor(actx.sampleRate*dur);
   const buffer=actx.createBuffer(1,bufferSize,actx.sampleRate);
   const data=buffer.getChannelData(0);
@@ -991,6 +1021,7 @@ const SFX={
 };
 function playMusicNote(freq,dur,type,vol,reverbAmt){
   if(!actx || !freq) return;
+  freq*=phoneLift(freq);
   const t0=actx.currentTime;
   const osc=actx.createOscillator(); osc.type=type; osc.frequency.setValueAtTime(freq,t0);
   const gain=actx.createGain();
@@ -1725,11 +1756,18 @@ camera.position.set(0,0,100);
 let camShake={t:0,mag:0};
 let SHAKE_ENABLED=true;
 
+// on phones, tablets and short windows the dialogue box would cover the characters' feet,
+// so the cutscene picture is shrunk to the space above the box instead of filling the screen
+function updateCutsceneLayout(){
+  const stacked=document.body.classList.contains('touch-mode') || window.innerHeight<620;
+  document.body.classList.toggle('cut-stacked',stacked);
+}
 function resizeCanvas(){
   const w=window.innerWidth,h=window.innerHeight;
   // the menus and HUD were laid out for ~920x560 and up; shrink the whole UI layer on smaller screens
   const uiZoom=Math.min(1,w/920,h/560);
   document.documentElement.style.setProperty('--ui-zoom',uiZoom.toFixed(3));
+  updateCutsceneLayout();
   const targetAspect=RENDER_W/RENDER_H;
   let cw=w, ch=w/targetAspect;
   if(ch>h){ ch=h; cw=h*targetAspect; }
@@ -2726,6 +2764,7 @@ function setTouchMode(on){
   if(touchMode===on) return;
   touchMode=on;
   document.body.classList.toggle('touch-mode',on);
+  updateCutsceneLayout();
   if(!on) releaseTouchInputs();
   updateTouchControlsVisibility();
 }
@@ -4695,8 +4734,24 @@ showScreen('screen-menu');
 if(window.matchMedia && matchMedia('(pointer: coarse)').matches) setTouchMode(true);
 // browsers block sound until the player clicks or presses a key, so the menu music
 // starts on the first gesture (or right away if the browser already allows autoplay)
+// iOS before 17 has no audioSession API: a looping silent <audio> element switches Safari into
+// media playback, so Web Audio follows the media volume instead of being muted by the ring switch
+function unlockIOSMediaPlayback(){
+  const ios=/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  if(!ios || navigator.audioSession) return;
+  try{
+    const rate=8000, n=rate/2, buf=new ArrayBuffer(44+n*2), v=new DataView(buf);
+    const w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+    w(0,'RIFF'); v.setUint32(4,36+n*2,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,n*2,true);
+    const a=new Audio(URL.createObjectURL(new Blob([buf],{type:'audio/wav'})));
+    a.loop=true; a.setAttribute('playsinline',''); a.volume=0.01;
+    const p=a.play(); if(p && p.catch) p.catch(()=>{});
+  }catch(e){}
+}
 function startAudioFromGesture(){
   initAudio();
+  unlockIOSMediaPlayback();
   if(!actx) return;
   const begin=()=>{
     document.getElementById('sound-prompt').classList.add('gone');
