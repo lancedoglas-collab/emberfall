@@ -329,6 +329,16 @@ body.touch-mode .combo-counter{top:116px;}
 #wavecomplete-banner .wc1{font-family:'Cinzel',serif;font-size:38px;letter-spacing:8px;color:var(--ember2);text-shadow:0 0 20px var(--ember),0 4px 0 #000;}
 #wavecomplete-banner .wc2{font-family:'Press Start 2P',monospace;font-size:14px;color:var(--parchment);margin-top:10px;text-shadow:2px 2px 0 #000;}
 .dialogue-box{position:absolute;bottom:5%;left:50%;transform:translateX(-50%);width:80%;max-width:820px;background:linear-gradient(160deg,#1c1409f2,#0e0b06f5);border:1px solid #6a5030;box-shadow:0 0 0 1px #000,0 12px 50px rgba(0,0,0,0.85),inset 0 0 40px rgba(255,122,51,0.05);padding:0;pointer-events:auto;}
+.dlg-portrait{position:absolute;left:16px;top:16px;width:72px;height:72px;image-rendering:pixelated;display:none;background:radial-gradient(circle at 50% 40%,#3a2614,#120c06 75%);border:1px solid #8a6a38;box-shadow:0 0 0 1px #000,0 0 18px rgba(255,140,50,0.18),inset 0 0 12px rgba(0,0,0,0.6);}
+.dialogue-box.has-portrait .dlg-portrait{display:block;}
+.dialogue-box.has-portrait .dlg-nameplate,.dialogue-box.has-portrait .dialogue-text{padding-left:106px;}
+.dialogue-box.has-portrait .dlg-sep{margin-left:106px;}
+.dialogue-box.has-portrait{min-height:104px;}
+.dialogue-box.is-villain{border-color:#8a2a18;box-shadow:0 0 0 1px #000,0 12px 50px rgba(0,0,0,0.85),0 0 30px rgba(255,60,20,0.18),inset 0 0 40px rgba(255,60,20,0.08);}
+.dialogue-box.is-villain .dlg-portrait{border-color:#c03a1c;box-shadow:0 0 0 1px #000,0 0 22px rgba(255,60,20,0.45);background:radial-gradient(circle at 50% 45%,#4a1408,#120404 75%);}
+.dialogue-box.is-villain .dialogue-speaker{color:#ff6a3a;text-shadow:0 0 14px rgba(255,60,20,0.7);}
+.dialogue-box.is-spirit .dlg-portrait{border-color:#6aa8c8;box-shadow:0 0 0 1px #000,0 0 22px rgba(120,200,255,0.35);background:radial-gradient(circle at 50% 40%,#1a2e3a,#060c12 75%);}
+.dialogue-box.is-spirit .dialogue-speaker{color:#9ad8ff;text-shadow:0 0 14px rgba(120,200,255,0.6);}
 .dlg-corner{position:absolute;width:14px;height:14px;border:2px solid var(--gold);opacity:0.65;pointer-events:none;}
 .dlg-corner.dlg-tl{top:-1px;left:-1px;border-right:none;border-bottom:none;}
 .dlg-corner.dlg-tr{top:-1px;right:-1px;border-left:none;border-bottom:none;}
@@ -683,6 +693,7 @@ body.cut-stacked .dialogue-text{font-size:16px;line-height:1.6;min-height:52px;}
     <div class="dialogue-box" id="dialogue-box">
       <div class="dlg-corner dlg-tl"></div><div class="dlg-corner dlg-tr"></div>
       <div class="dlg-corner dlg-bl"></div><div class="dlg-corner dlg-br"></div>
+      <canvas id="dlg-portrait" class="dlg-portrait" width="32" height="32"></canvas>
       <div class="dlg-nameplate">
         <i class="dlg-pip">◆</i>
         <div class="dialogue-speaker" id="dlg-speaker">Narrator</div>
@@ -3939,7 +3950,7 @@ function drawSceneInsideDungeon(t){
 const COLLAPSE_DEBRIS=Array.from({length:14},(_,i)=>({
   x:(i*37+11*(i%3))%480, size:rand(3,7), speed:rand(38,78), phase:rand(0,10)
 }));
-function drawSceneCollapse(t){
+function drawSceneCollapse(t,focus){
   cutCtx.clearRect(0,0,cutW,cutH);
   const sx=Math.sin(t*23)*1.6, sy=Math.cos(t*19)*1.2;
   cutCtx.save(); cutCtx.translate(sx,sy);
@@ -3980,7 +3991,13 @@ function drawSceneCollapse(t){
     cutCtx.fillRect((i*53+t*30)%cutW,(i*67+cutH-((t*70+i*40)%cutH)),rand(2,3),rand(2,3));
   }
   cutCtx.fillStyle='#100907'; cutCtx.fillRect(0,235,cutW,cutH-235);
-  drawCharSil(240,205,selectedChar,t,true);
+  if(focus==='spirit'){
+    drawCharSil(220,205,selectedChar,t,false);
+    drawLostSpirit(310,205,t);
+  } else {
+    spiritAppearT=null;
+    drawCharSil(240,205,selectedChar,t,true);
+  }
   cutCtx.restore();
 }
 function renderScene(sceneId,localT,focus,approach){
@@ -3989,18 +4006,109 @@ function renderScene(sceneId,localT,focus,approach){
   else if(sceneId==='dungeonEntrance') drawSceneDungeonEntrance(localT,false);
   else if(sceneId==='dungeonEntranceFocus') drawSceneDungeonEntrance(localT,true);
   else if(sceneId==='insideDungeon') drawSceneInsideDungeon(localT);
-  else if(sceneId==='collapse') drawSceneCollapse(localT);
+  else if(sceneId==='collapse') drawSceneCollapse(localT,focus);
+  else if(sceneId==='legend') drawSceneLegend(localT,focus);
   else if(sceneId==='descend1') drawSceneDescend(localT,1,focus);
   else if(sceneId==='descend2') drawSceneDescend(localT,2,focus);
   else if(sceneId==='wardenLair') drawSceneWardenLair(localT);
 }
+let legendWardenCanvas=null;
+// prologue: a falling star, the Warden rising from the crater, then the old order sealing it away
+function drawSceneLegend(t,focus){
+  const W=cutW,H=cutH;
+  const st=(performance.now()-cutStepStart)/1000;
+  cutCtx.clearRect(0,0,W,H);
+  const sky=cutCtx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#06030a'); sky.addColorStop(0.55,'#1a0910'); sky.addColorStop(1,'#2c0c07');
+  cutCtx.fillStyle=sky; cutCtx.fillRect(0,0,W,H);
+  for(let i=0;i<46;i++){
+    const a=0.25+0.5*Math.abs(Math.sin(t*1.3+i*2.1));
+    px(cutCtx,hash01(i+500)*W,hash01(i+600)*120,1,1,'rgba(255,240,220,'+a.toFixed(2)+')');
+  }
+  // the whole landscape sits 44px higher so the crater and the seal stay clear of the dialogue box
+  cutCtx.save(); cutCtx.translate(0,-44);
+  let glow;
+  if(focus==='fire') glow=clamp((st-1.4)/1.2,0,1);
+  else if(focus==='sealed') glow=Math.max(0.12,1-st/2.8);
+  else glow=1;
+  const pulse=0.85+0.15*Math.sin(t*2.4);
+  const cg=cutCtx.createRadialGradient(240,222,4,240,222,170);
+  cg.addColorStop(0,'rgba(255,150,60,'+(0.75*glow*pulse).toFixed(3)+')');
+  cg.addColorStop(0.35,'rgba(200,60,20,'+(0.35*glow*pulse).toFixed(3)+')');
+  cg.addColorStop(1,'rgba(40,6,4,0)');
+  cutCtx.fillStyle=cg; cutCtx.fillRect(0,0,W,H);
+  // far ridge
+  cutCtx.fillStyle='#16070b';
+  cutCtx.beginPath(); cutCtx.moveTo(0,H); cutCtx.lineTo(0,176);
+  [[40,166],[90,172],[140,158],[190,168],[240,150],[290,166],[340,154],[400,170],[450,160],[480,168]].forEach(p=>cutCtx.lineTo(p[0],p[1]));
+  cutCtx.lineTo(W,H); cutCtx.closePath(); cutCtx.fill();
+  // Warden silhouette rises out of the crater, then sinks back when sealed
+  if(focus==='warden' || focus==='sealed'){
+    if(!legendWardenCanvas){
+      legendWardenCanvas=newCanvas(72,72); const lc=legendWardenCanvas.getContext('2d');
+      drawBoss(lc,false); lc.globalCompositeOperation='source-atop'; lc.fillStyle='rgba(14,3,3,0.86)'; lc.fillRect(0,0,72,72);
+    }
+    const rise= focus==='warden'? easeOutCubic(clamp(st/2.6,0,1)) : 1-easeInOutCubic(clamp(st/2.4,0,1));
+    const wy=228-rise*106+Math.sin(t*1.5)*2;
+    const halo=cutCtx.createRadialGradient(240,wy+30,6,240,wy+30,90);
+    halo.addColorStop(0,'rgba(255,90,30,'+(0.45*rise).toFixed(3)+')'); halo.addColorStop(1,'rgba(255,90,30,0)');
+    cutCtx.fillStyle=halo; cutCtx.fillRect(140,wy-70,200,200);
+    cutCtx.imageSmoothingEnabled=false;
+    cutCtx.globalAlpha=clamp(rise*1.3,0,1);
+    cutCtx.drawImage(legendWardenCanvas,240-60,wy-50,120,120);
+    cutCtx.globalAlpha=1;
+  }
+  // near hills with the crater mouth in the middle
+  cutCtx.fillStyle='#0a0405';
+  cutCtx.beginPath(); cutCtx.moveTo(0,H); cutCtx.lineTo(0,214);
+  [[50,206],[110,212],[170,204],[205,214],[222,224],[258,224],[275,214],[310,204],[370,210],[430,204],[480,212]].forEach(p=>cutCtx.lineTo(p[0],p[1]));
+  cutCtx.lineTo(W,H); cutCtx.closePath(); cutCtx.fill();
+  px(cutCtx,222,222,36,3,'rgba(255,170,80,'+(0.8*glow).toFixed(2)+')');
+  // embers drifting up from the crater
+  for(let i=0;i<22;i++){
+    const life=((t*0.5+i*0.137)%1);
+    const ex=240+Math.sin(i*7.3+t*0.9)*(18+life*70), ey=224-life*190;
+    const a=(1-life)*0.85*glow;
+    if(a>0.03) px(cutCtx,ex,ey,2,2,'rgba(255,'+(140+(i%5)*20)+',50,'+a.toFixed(2)+')');
+  }
+  // the falling star that started it all
+  if(focus==='fire' && st<1.6){
+    const k=st/1.6, mx=40+k*200, my=-10+k*232;
+    for(let j=0;j<16;j++) px(cutCtx,mx-j*7,my-j*8,3,3,'rgba(255,'+(230-j*9)+','+(160-j*8)+','+(1-j/16).toFixed(2)+')');
+    const hg=cutCtx.createRadialGradient(mx,my,1,mx,my,16); hg.addColorStop(0,'rgba(255,240,200,0.9)'); hg.addColorStop(1,'rgba(255,200,120,0)');
+    cutCtx.fillStyle=hg; cutCtx.fillRect(mx-16,my-16,32,32);
+  }
+  // the old order: hooded keepers on the ridge, and the rune seal closing over the crater
+  if(focus==='sealed'){
+    const appear=clamp(st/1.2,0,1);
+    for(let i=0;i<5;i++){
+      const kx=[96,150,330,384,240][i], ky=[205,201,201,205,192][i];
+      cutCtx.globalAlpha=appear;
+      px(cutCtx,kx-3,ky-12,7,12,'#050203'); px(cutCtx,kx-2,ky-15,5,4,'#050203');
+      const fl=0.7+0.3*Math.sin(t*9+i*2);
+      px(cutCtx,kx+4,ky-17,1,8,'#3a2410');
+      px(cutCtx,kx+3,ky-20,3,3,'rgba(255,'+(170+((i*13)%40))+',60,'+fl.toFixed(2)+')');
+      cutCtx.globalAlpha=1;
+    }
+    const sealA=clamp((st-0.8)/1.2,0,1)*(0.75+0.25*Math.sin(t*3));
+    cutCtx.save();
+    cutCtx.translate(240,222); cutCtx.scale(1,0.28);
+    cutCtx.strokeStyle='rgba(255,214,120,'+sealA.toFixed(2)+')'; cutCtx.lineWidth=3;
+    cutCtx.beginPath(); cutCtx.arc(0,0,64,0,TAU); cutCtx.stroke();
+    cutCtx.setLineDash([10,8]); cutCtx.lineDashOffset=-t*30; cutCtx.lineWidth=2;
+    cutCtx.beginPath(); cutCtx.arc(0,0,48,0,TAU); cutCtx.stroke();
+    cutCtx.setLineDash([]);
+    cutCtx.restore();
+  }
+  cutCtx.restore();
+  cutCtx.fillStyle='#0a0405'; cutCtx.fillRect(0,H-46,W,46);
+  if(focus==='fire' && st>=1.6 && st<2.5){
+    cutCtx.fillStyle='rgba(255,190,110,'+((2.5-st)*0.7).toFixed(3)+')'; cutCtx.fillRect(0,0,W,H);
+  }
+}
 let spiritCanvas=null, spiritAppearT=null;
 function drawLostSpirit(x,y,t){
-  if(!spiritCanvas){
-    spiritCanvas=newCanvas(24,32); const sc=spiritCanvas.getContext('2d');
-    drawActor(sc,'hunter',Object.assign({},PALETTES.hunter,{dir:'down',legOff:1}));
-    sc.globalCompositeOperation='source-atop'; sc.fillStyle='rgba(150,220,255,0.78)'; sc.fillRect(0,0,24,32);
-  }
+  getSpiritCanvas();
   if(spiritAppearT===null) spiritAppearT=t;
   const fade=clamp((t-spiritAppearT)/1.2,0,1);
   const fy=y+Math.sin(t*1.8)*3;
@@ -4102,10 +4210,13 @@ function drawSceneDescend(t,tier,focus){
 const OTHER_NAMES={warrior:['Hunter','Pyromancer'],hunter:['Warrior','Pyromancer'],pyromancer:['Warrior','Hunter']};
 function buildOpeningScriptPart1(){
   return [
+    {speaker:'Narrator',text:'Long ago, before the Chapterhouse was ever built, a burning star fell from the sky and buried itself beneath these hills.',sceneId:'legend',focus:'fire',cam:[1.06,240,160]},
+    {speaker:'Narrator',text:'From its fire rose a keeper of iron and flame: the Ember Warden. It hungered for every soul that wandered near.',sceneId:'legend',focus:'warden',cam:[1.12,240,55],shake:3,sfx:'bossRoar'},
+    {speaker:'Narrator',text:'The old order sealed it below with stone and oath. And in time... the world forgot.',sceneId:'legend',focus:'sealed',cam:[1,240,150],flash:'255,214,120'},
     {speaker:'Narrator',text:'Three friends set out at dawn, the road unwinding toward the distant Chapterhouse.',sceneId:'travel',approach:0},
     {speaker:'Warrior',text:'Another quiet trip. I could use a real fight.',sceneId:'travel',approach:0.1},
     {speaker:'Hunter',text:'Quiet is good. Quiet means no one is hunting us.',sceneId:'travel',approach:0.3},
-    {speaker:'Pyromancer',text:"This quiet... it doesn't sit right with me.",sceneId:'travel',approach:0.5},
+    {speaker:'Pyromancer',text:"This quiet... it doesn't sit right with me.",sceneId:'travel',approach:0.5,cam:[1.1,240,180]},
     {speaker:'Narrator',text:'By midday the towers of the Chapterhouse rise over the hills ahead.',sceneId:'travel',approach:0.8},
     {speaker:'Narrator',text:'The three friends arrive at last, dust of the road still on their boots.',sceneId:'chapterhouse'},
   ];
@@ -4120,24 +4231,28 @@ function buildOpeningScriptPart2(){
   const chosenName=CHAR_DEFS[selectedChar].name;
   return [
     {speaker:'Narrator',text:'Resting briefly near the Chapterhouse, they notice something half-buried in the hillside — a stone archway breathing cold air into the evening.',sceneId:'dungeonEntrance'},
-    {speaker:chosenName,text:curiosityLine,sceneId:'dungeonEntranceFocus'},
+    {speaker:chosenName,text:curiosityLine,sceneId:'dungeonEntranceFocus',cam:[1.12,240,150]},
     {speaker:other[0],text:'Are you sure about this? We only came here for the Chapterhouse.',sceneId:'dungeonEntranceFocus'},
     {speaker:other[1],text:"We'll wait for you here. Don't be a hero about it.",sceneId:'dungeonEntranceFocus'},
-    {speaker:'Narrator',text:chosenName+' steps into the dark. Behind them, stone grinds against stone — the entrance seals shut.',sceneId:'insideDungeon'},
-    {speaker:'Narrator',text:'Something stirs in the darkness ahead.',sceneId:'insideDungeon'},
+    {speaker:'Narrator',text:chosenName+' steps into the dark. Behind them, stone grinds against stone — the entrance seals shut.',sceneId:'insideDungeon',shake:5,flash:'40,20,10',sfx:'explosion'},
+    {speaker:'Narrator',text:'Far below, something old opens its eyes. The stones grow warm.',sceneId:'insideDungeon',cam:[1.25,240,120],sfx:'bossRoar'},
+    {speaker:chosenName,text:"No way back now. Only down.",sceneId:'insideDungeon',cam:[1.1,240,170]},
   ];
 }
 function buildEndingScript(){
   const chosenName=CHAR_DEFS[selectedChar].name;
   const other=OTHER_NAMES[selectedChar];
   return [
-    {speaker:'Narrator',text:'The Ember Warden collapses into ash and embers. The dungeon groans — stone cracking, light pouring through the fractures.',sceneId:'collapse'},
-    {speaker:chosenName,text:'Time to go.',sceneId:'collapse'},
-    {speaker:'Narrator',text:'The passage to the surface tears open. '+chosenName+' runs for the light.',sceneId:'collapse'},
+    {speaker:'Narrator',text:'The Ember Warden collapses into ash and embers. The dungeon groans — stone cracking, light pouring through the fractures.',sceneId:'collapse',shake:6,flash:'255,150,60',sfx:'explosion'},
+    {speaker:'Ember Warden',text:'The fire... does not die. It only... waits.',sceneId:'collapse',cam:[1.15,240,120]},
+    {speaker:chosenName,text:'Time to go.',sceneId:'collapse',cam:[1.12,240,175]},
+    {speaker:'Narrator',text:'In the falling light, the Lost Spirit appears one last time. It is no longer flickering.',sceneId:'collapse',focus:'spirit',cam:[1.15,270,170]},
+    {speaker:'Lost Spirit',text:"You put the fire out. After all these years, I can finally rest. Now run, and don't look back.",sceneId:'collapse',focus:'spirit',cam:[1.2,300,160]},
+    {speaker:'Narrator',text:'The spirit fades into the light. The passage to the surface tears open, and '+chosenName+' runs for it.',sceneId:'collapse',shake:4,sfx:'dash'},
     {speaker:other[0],text:'There! They made it!',sceneId:'chapterhouse'},
     {speaker:other[1],text:"About time. We were one more minute from a very reckless rescue plan.",sceneId:'chapterhouse'},
-    {speaker:chosenName,text:"You wouldn't believe what's down there.",sceneId:'chapterhouse'},
-    {speaker:'Narrator',text:'As the three friends walk on, none of them notice the faint ember-light still flickering deep beneath the hill... waiting.',sceneId:'chapterhouse'},
+    {speaker:chosenName,text:"You wouldn't believe what's down there.",sceneId:'chapterhouse',cam:[1.1,240,180]},
+    {speaker:'Narrator',text:'As the three friends walk on, none of them notice the faint ember-light still flickering deep beneath the hill... waiting.',sceneId:'chapterhouse',cam:[1.18,240,215]},
   ];
 }
 function buildDepthScript(tier){
@@ -4146,7 +4261,7 @@ function buildDepthScript(tier){
     return [
       {speaker:'Narrator',text:'Past the first vaults, the passage breaks open onto a stairway spiraling down into colder dark.',sceneId:'descend1'},
       {speaker:chosenName,text:"Deeper than I expected. Whatever's down here has been waiting a long time.",sceneId:'descend1'},
-      {speaker:'Narrator',text:'A pale figure flickers at the foot of the stair: the ghost of an adventurer, armor rusted through.',sceneId:'descend1',focus:'spirit'},
+      {speaker:'Narrator',text:'A pale figure flickers at the foot of the stair: the ghost of an adventurer, armor rusted through.',sceneId:'descend1',focus:'spirit',cam:[1.15,290,170]},
       {speaker:'Lost Spirit',text:"Another one sealed in... I came hunting the Warden's ember too, long ago. I never found the way out.",sceneId:'descend1',focus:'spirit'},
       {speaker:'Lost Spirit',text:'A brute of iron guards these halls. It hits hard but turns slowly. Never let it corner you.',sceneId:'descend1',focus:'spirit'},
       {speaker:chosenName,text:"Then I'll make sure I'm not the next ghost down here.",sceneId:'descend1',focus:'spirit'},
@@ -4155,7 +4270,7 @@ function buildDepthScript(tier){
   return [
     {speaker:'Narrator',text:'The stair gives way to a scorched throat of rock, heat rising from somewhere far below.',sceneId:'descend2'},
     {speaker:chosenName,text:"That's not torchlight. Something down there is still burning.",sceneId:'descend2'},
-    {speaker:'Narrator',text:'The ghost is waiting again, fainter now, as if the heat is burning it away.',sceneId:'descend2',focus:'spirit'},
+    {speaker:'Narrator',text:'The ghost is waiting again, fainter now, as if the heat is burning it away.',sceneId:'descend2',focus:'spirit',cam:[1.15,290,170]},
     {speaker:'Lost Spirit',text:"The Dread Knight was the Warden's first champion. It is fast, and it does not tire.",sceneId:'descend2',focus:'spirit'},
     {speaker:'Lost Spirit',text:"Below it sleeps the Ember Warden. Its fire is what sealed the gate. Put that fire out, and the way home opens.",sceneId:'descend2',focus:'spirit'},
     {speaker:chosenName,text:"Then that's my way out.",sceneId:'descend2',focus:'spirit'},
@@ -4169,11 +4284,11 @@ function buildBossIntroScript(){
     ? "I've brought down bigger prey than you. Probably."
     : "Fire? You picked the wrong opponent.";
   return [
-    {speaker:'Narrator',text:'The heat becomes a roar. At the heart of the deep, a shape of black iron and living flame rises from the coals.',sceneId:'wardenLair'},
-    {speaker:'Ember Warden',text:'So. The seal brought me a visitor after all.',sceneId:'wardenLair'},
-    {speaker:'Ember Warden',text:'For three hundred years I have kept this fire. Every soul that wanders in feeds it.',sceneId:'wardenLair'},
-    {speaker:chosenName,text:defiance,sceneId:'wardenLair'},
-    {speaker:'Ember Warden',text:'Then burn.',sceneId:'wardenLair'},
+    {speaker:'Narrator',text:'The heat becomes a roar. At the heart of the deep, a shape of black iron and living flame rises from the coals.',sceneId:'wardenLair',shake:4,sfx:'bossRoar'},
+    {speaker:'Ember Warden',text:'So. The seal brought me a visitor after all.',sceneId:'wardenLair',cam:[1.2,240,80]},
+    {speaker:'Ember Warden',text:'For three hundred years I have kept this fire. Every soul that wanders in feeds it.',sceneId:'wardenLair',cam:[1.28,240,75]},
+    {speaker:chosenName,text:defiance,sceneId:'wardenLair',cam:[1.22,240,180]},
+    {speaker:'Ember Warden',text:'Then burn.',sceneId:'wardenLair',cam:[1.4,240,80],shake:6,flash:'255,90,30',sfx:'bossRoar'},
   ];
 }
 let dialogueScript=[], dialogueIndex=0, onDialogueEnd=null;
@@ -4205,12 +4320,59 @@ function skipTypewriter(){
   }
   return false;
 }
+/* ---- cutscene camera & post effects ----
+   Each dialogue step can carry: cam:[zoom,anchorX,anchorY] (canvas coords; zooms toward that point),
+   shake:<px>, flash:'r,g,b', sfx:'<SFX name>'. Every scene also gets a slow push-in. */
+const cutCam={z:1,ax:240,ay:170,tz:1,tax:240,tay:170,shake:0,flash:0,flashColor:'255,255,255',last:0};
+let cutStepStart=0;
+function hash01(n){ const v=Math.sin(n*12.9898+78.233)*43758.5453; return v-Math.floor(v); }
+const CUT_MOTES=Array.from({length:26},(_,i)=>({x:hash01(i)*480,y:hash01(i+100)*270,s:0.4+hash01(i+200)*0.8,ph:hash01(i+300)*6.28}));
+function applyStepCinematics(step){
+  cutStepStart=performance.now();
+  const c=step.cam||[1,240,170];
+  cutCam.tz=c[0]; cutCam.tax=clamp(c[1],60,420); cutCam.tay=clamp(c[2],50,220);
+  if(step.shake) cutCam.shake=Math.max(cutCam.shake,step.shake);
+  if(step.flash){ cutCam.flash=1; cutCam.flashColor=step.flash; }
+  if(step.sfx && SFX[step.sfx]) SFX[step.sfx]();
+}
+function updateCutCamera(sceneT){
+  const now=performance.now();
+  const dt=cutCam.last? Math.min(0.05,(now-cutCam.last)/1000) : 0.016; cutCam.last=now;
+  const e=1-Math.exp(-dt*1.8);
+  cutCam.z+=(cutCam.tz-cutCam.z)*e; cutCam.ax+=(cutCam.tax-cutCam.ax)*e; cutCam.ay+=(cutCam.tay-cutCam.ay)*e;
+  let Z=cutCam.z*(1+0.045*easeInOutCubic(Math.min(1,sceneT/14)));
+  let sx=0, sy=0;
+  if(cutCam.shake>0){
+    sx=(Math.random()*2-1)*cutCam.shake; sy=(Math.random()*2-1)*cutCam.shake;
+    cutCam.shake*=Math.exp(-dt*4.5); if(cutCam.shake<0.05) cutCam.shake=0;
+    // zoom in just enough that the shaking frame never shows an unpainted edge
+    Z=Math.max(Z,1+cutCam.shake/45);
+  }
+  if(cutCam.flash>0){ cutCam.flash*=Math.exp(-dt*3.2); if(cutCam.flash<0.02) cutCam.flash=0; }
+  cutCtx.setTransform(Z,0,0,Z,cutCam.ax-cutCam.ax*Z+sx,cutCam.ay-cutCam.ay*Z+sy);
+}
+function drawCutPost(t){
+  cutCtx.setTransform(1,0,0,1,0,0);
+  for(const m of CUT_MOTES){
+    const x=(m.x+Math.sin(t*0.4+m.ph)*14+t*4*m.s)%cutW, y=(m.y-t*6*m.s+cutH*4)%cutH;
+    const a=0.08+0.1*Math.abs(Math.sin(t*0.8+m.ph));
+    cutCtx.fillStyle='rgba(255,214,160,'+a.toFixed(3)+')'; cutCtx.fillRect(x|0,y|0,1,1);
+  }
+  const v=cutCtx.createRadialGradient(240,135,90,240,135,300);
+  v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,0.55)');
+  cutCtx.fillStyle=v; cutCtx.fillRect(0,0,cutW,cutH);
+  cutCtx.fillStyle='rgba(0,0,0,0.07)';
+  for(let i=0;i<70;i++) cutCtx.fillRect((Math.random()*cutW)|0,(Math.random()*cutH)|0,1,1);
+  if(cutCam.flash>0){ cutCtx.fillStyle='rgba('+cutCam.flashColor+','+(cutCam.flash*0.75).toFixed(3)+')'; cutCtx.fillRect(0,0,cutW,cutH); }
+  cutCtx.fillStyle='#000'; cutCtx.fillRect(0,0,cutW,9); cutCtx.fillRect(0,cutH-9,cutW,9);
+}
 function playCutscene(script,onEnd){
   dialogueScript=script; dialogueIndex=0; onDialogueEnd=onEnd;
   showScreen('screen-cutscene');
   Music.play('cutscene');
   cutsceneStartTime=performance.now();
   cutsceneSceneId=null; cutsceneSceneStart=0;
+  Object.assign(cutCam,{z:1,ax:240,ay:170,tz:1,tax:240,tay:170,shake:0,flash:0,last:0});
   cutCanvas.style.transition='opacity .45s ease';
   cutCanvas.style.opacity='1';
   renderDialogueStep();
@@ -4221,7 +4383,8 @@ function playCutscene(script,onEnd){
     if(step){
       if(step.sceneId!==cutsceneSceneId){
         cutsceneSceneId=step.sceneId; cutsceneSceneStart=globalT;
-        const SCENE_NAMES={travel:'The Open Road',chapterhouse:'The Chapterhouse',dungeonEntrance:'The Dungeon Gate',dungeonEntranceFocus:'The Dungeon Gate',insideDungeon:'Inside the Dark',collapse:'The Collapse',descend1:'The Sunken Halls',descend2:'The Bleeding Deep',wardenLair:"The Warden's Forge"};
+        cutCam.z=cutCam.tz; cutCam.ax=cutCam.tax; cutCam.ay=cutCam.tay;
+        const SCENE_NAMES={legend:'Three Hundred Years Ago',travel:'The Open Road',chapterhouse:'The Chapterhouse',dungeonEntrance:'The Dungeon Gate',dungeonEntranceFocus:'The Dungeon Gate',insideDungeon:'Inside the Dark',collapse:'The Collapse',descend1:'The Sunken Halls',descend2:'The Bleeding Deep',wardenLair:"The Warden's Forge"};
         const overlay=document.getElementById('cut-overlay');
         const titleEl=document.getElementById('cut-title-text');
         if(titleEl && SCENE_NAMES[step.sceneId]) titleEl.textContent=SCENE_NAMES[step.sceneId];
@@ -4234,15 +4397,50 @@ function playCutscene(script,onEnd){
           setTimeout(()=>{ if(overlay) overlay.classList.remove('active'); },250);
         },640);
       }
-      renderScene(step.sceneId, globalT-cutsceneSceneStart, step.focus, step.approach);
+      const sceneT=globalT-cutsceneSceneStart;
+      updateCutCamera(sceneT);
+      renderScene(step.sceneId, sceneT, step.focus, step.approach);
+      drawCutPost(globalT);
+      const pe=document.getElementById('dlg-portrait');
+      pe.style.transform= typewriterTimer? 'translateY('+((Math.floor(performance.now()/110)%2)?-2:0)+'px)' : '';
     }
     cutsceneRAF=requestAnimationFrame(loop);
   };
   loop();
 }
+const portraitCache={};
+function getSpiritCanvas(){
+  if(!spiritCanvas){
+    spiritCanvas=newCanvas(24,32); const sc=spiritCanvas.getContext('2d');
+    drawActor(sc,'hunter',Object.assign({},PALETTES.hunter,{dir:'down',legOff:1}));
+    sc.globalCompositeOperation='source-atop'; sc.fillStyle='rgba(150,220,255,0.78)'; sc.fillRect(0,0,24,32);
+  }
+  return spiritCanvas;
+}
+// head-and-shoulders crop of the speaker's sprite, shown in the dialogue box
+function buildPortrait(speaker){
+  if(portraitCache[speaker]!==undefined) return portraitCache[speaker];
+  const kind={Warrior:'warrior',Hunter:'hunter',Pyromancer:'pyromancer'}[speaker];
+  let src=null, sx=0, sy=0, sw=0, sh=0;
+  if(kind){ src=newCanvas(24,32); drawActor(src.getContext('2d'),kind,Object.assign({},PALETTES[kind],{dir:'down',legOff:1})); sx=2; sy=0; sw=20; sh=20; }
+  else if(speaker==='Lost Spirit'){ src=getSpiritCanvas(); sx=2; sy=0; sw=20; sh=20; }
+  else if(speaker==='Ember Warden'){ src=newCanvas(72,72); drawBoss(src.getContext('2d'),false); sx=14; sy=0; sw=44; sh=44; }
+  if(!src){ portraitCache[speaker]=null; return null; }
+  const out=newCanvas(32,32); const o=out.getContext('2d'); o.imageSmoothingEnabled=false;
+  o.drawImage(src,sx,sy,sw,sh,0,0,32,32);
+  portraitCache[speaker]=out;
+  return out;
+}
 function renderDialogueStep(){
   const step=dialogueScript[dialogueIndex];
   document.getElementById('dlg-speaker').textContent=step.speaker;
+  const box=document.getElementById('dialogue-box'), pe=document.getElementById('dlg-portrait');
+  const portrait=buildPortrait(step.speaker);
+  box.classList.toggle('has-portrait',!!portrait);
+  box.classList.toggle('is-villain',step.speaker==='Ember Warden');
+  box.classList.toggle('is-spirit',step.speaker==='Lost Spirit');
+  if(portrait){ const pc=pe.getContext('2d'); pc.imageSmoothingEnabled=false; pc.clearRect(0,0,32,32); pc.drawImage(portrait,0,0); }
+  applyStepCinematics(step);
   startTypewriter(step.text,step.speaker);
 }
 function endCutscene(){
