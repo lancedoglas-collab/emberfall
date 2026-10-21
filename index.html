@@ -235,7 +235,7 @@ h2.section-title.small-margin{margin-bottom:4px;}
 .inventory-row{display:flex;gap:4px;margin-top:2px;min-height:22px;}
 .inv-icon{width:20px;height:20px;border:1px solid var(--stone);background:#140f09cc;display:flex;align-items:center;justify-content:center;font-size:11px;opacity:0.95;border-radius:2px;}
 .hud-topright{position:absolute;top:14px;right:14px;text-align:right;}
-.combo-counter{position:absolute;top:104px;left:50%;transform:translateX(-50%);font-family:'Press Start 2P',monospace;font-size:15px;color:#ffd85a;text-shadow:0 0 10px rgba(255,216,90,0.7),2px 2px 0 #000;letter-spacing:2px;}
+.combo-counter{position:absolute;top:118px;left:50%;transform:translateX(-50%);font-family:'Press Start 2P',monospace;font-size:15px;color:#ffd85a;text-shadow:0 0 10px rgba(255,216,90,0.7),2px 2px 0 #000;letter-spacing:2px;}
 .combo-counter.pop{animation:comboPop .25s ease-out;}
 @keyframes comboPop{0%{transform:translateX(-50%) scale(1.4);opacity:0.4;}100%{transform:translateX(-50%) scale(1);opacity:1;}}
 .wave-label{font-family:'Press Start 2P',monospace;font-size:14px;color:var(--ember2);text-shadow:2px 2px 0 #000;}
@@ -302,7 +302,7 @@ body.touch-mode .pausebtn{font-size:13px;padding:12px 20px;}
 body.touch-mode .skip-btn{font-size:15px;padding:12px 20px;}
 body.touch-mode #control-hints{top:30%;}
 body.touch-mode #boss-hud{top:62px;}
-body.touch-mode .combo-counter{top:116px;}
+body.touch-mode .combo-counter{top:118px;left:16px;transform:none;}
 @media (max-height:500px){
   .dialogue-box{bottom:2%;}
   .dialogue-hint{padding:4px 22px 8px;}
@@ -329,7 +329,14 @@ body.touch-mode .combo-counter{top:116px;}
 @keyframes lowhpPulse{0%,100%{filter:brightness(0.8);}50%{filter:brightness(1.35);}}
 #upg-class{--cc:#b58cff;--cg:rgba(160,110,255,0.3);}
 .upg-class-tag{position:absolute;top:7px;right:8px;font-family:'Cinzel',serif;font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:#b58cff;opacity:0.85;}
-#boss-hud .barbox{width:420px;height:14px;margin-top:4px;}
+#boss-hud .barbox{width:420px;height:18px;margin-top:5px;background:#2a0b08;border:2px solid #000;box-shadow:0 0 0 1px #c0502a,0 0 14px rgba(255,80,30,0.45);}
+#boss-hud{width:446px;padding:6px 12px 8px;background:linear-gradient(180deg,rgba(14,6,4,0.82),rgba(14,6,4,0.55));border:1px solid rgba(255,100,50,0.35);}
+#boss-hud .bar-label{font-size:10px;}
+.boss-tick{position:absolute;top:0;bottom:0;width:2px;background:rgba(0,0,0,0.75);box-shadow:1px 0 0 rgba(255,220,180,0.25);}
+body.touch-mode #boss-hud{width:560px;padding:8px 14px 10px;}
+body.touch-mode #boss-hud .bname{font-size:22px;letter-spacing:5px;color:#ff9a6a;text-shadow:0 0 12px rgba(255,60,20,0.8),2px 2px 0 #000;}
+body.touch-mode #boss-hud .barbox{width:100%;height:30px;}
+body.touch-mode #boss-hud .bar-label{font-size:15px;}
 #wavecomplete-banner{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%);text-align:center;opacity:0;transition:opacity .4s;}
 #wavecomplete-banner.show{opacity:1;}
 #wavecomplete-banner .wc1{font-family:'Cinzel',serif;font-size:38px;letter-spacing:8px;color:var(--ember2);text-shadow:0 0 20px var(--ember),0 4px 0 #000;}
@@ -729,7 +736,7 @@ body.cut-stacked .dialogue-text{font-size:16px;line-height:1.6;min-height:52px;}
     <div class="fs-btn hud-fs hidden" id="fs-hud">⛶</div>
     <div id="boss-hud">
       <div class="bname" id="boss-name">THE EMBER WARDEN</div>
-      <div class="barbox"><div class="barfill" id="boss-fill" style="width:100%;background:linear-gradient(180deg,#ff8a3a,#a4271a);"></div></div>
+      <div class="barbox"><div class="barfill" id="boss-fill" style="width:100%;background:linear-gradient(180deg,#ffb24a,#ff5a2a 55%,#a4271a);"></div><span class="boss-tick" style="left:33.3%"></span><span class="boss-tick" style="left:66.6%"></span><div class="bar-label" id="boss-hp-label">100%</div></div>
     </div>
     <div id="boss-phase-banner"></div>
     <div id="control-hints">
@@ -2635,7 +2642,7 @@ function updateBoss(dt){
     if(boss.chargeT<=0){ boss.attackAnimTimer=0.2; boss.atkCd=rand(0.9,1.3); screenShake(3); }
     setActorAnim(boss.actor,'side','attack',0);
     setActorPos(boss,boss.x,boss.y);
-    document.getElementById('boss-fill').style.width=Math.max(0,boss.hp/boss.maxhp*100)+'%';
+    updateBossBar();
     return;
   }
   if(boss.phase===3){
@@ -2659,7 +2666,7 @@ function updateBoss(dt){
     }
     if(boss.telegraphTimer<=0) resolveBossTelegraph();
     setActorPos(boss,boss.x,boss.y);
-    document.getElementById('boss-fill').style.width=Math.max(0,boss.hp/boss.maxhp*100)+'%';
+    updateBossBar();
     return;
   }
 
@@ -2698,7 +2705,12 @@ function updateBoss(dt){
   else if(moving){ setActorAnim(boss.actor,'side','walk',Math.floor(performance.now()/150)%2); }
   else { setActorAnim(boss.actor,'side','idle',Math.floor(performance.now()/300)%2); }
   setActorPos(boss,boss.x,boss.y);
-  document.getElementById('boss-fill').style.width=Math.max(0,boss.hp/boss.maxhp*100)+'%';
+  updateBossBar();
+}
+function updateBossBar(){
+  const pct=Math.max(0,boss.hp/boss.maxhp*100);
+  document.getElementById('boss-fill').style.width=pct+'%';
+  document.getElementById('boss-hp-label').textContent=Math.ceil(pct)+'%';
 }
 function damagePlayerAOECheck(x,y,radius,dmg){
   if(dist(x,y,player.x,player.y)<=radius+18) damagePlayer(dmg,x,y);
